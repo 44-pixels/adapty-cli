@@ -44,35 +44,36 @@ export default class AnalyticsData extends Command {
   static args = {
     app_id: Args.string({description: 'App ID (UUID)', required: true}),
   }
-static description = 'Fetch analytics data for an app'
+static description = 'Fetch analytics chart data for an app'
 static enableJsonFlag = true
 static examples = [
-    '<%= config.bin %> analytics data 550e8400-e29b-41d4-a716-446655440000 --chart-id revenue --date 2024-01-01 2024-01-31',
+    '<%= config.bin %> analytics data APP_ID --chart-id revenue --date 2024-01-01 --date 2024-01-31',
+    '<%= config.bin %> analytics data APP_ID --chart-id mrr --date 2024-01-01 --date 2024-03-31 --period-unit week',
   ]
 static flags = {
-    'attribution-source': Flags.string({description: 'Attribution source filter (comma-separated)'}),
+    'attribution-source': Flags.string({description: 'Filter by attribution source integrations (comma-separated)'}),
     'chart-id': Flags.string({
-      description: 'Chart type to retrieve',
+      description: 'Chart type to retrieve (one per request)',
       options: [...CHART_IDS],
       required: true,
     }),
-    'country': Flags.string({description: 'Comma-separated list of country codes'}),
-    'date': Flags.string({description: 'Date range (space-separated: start end)', multiple: true, required: true}),
+    'country': Flags.string({description: 'Filter by 2-letter country codes (comma-separated)'}),
+    'date': Flags.string({description: 'Date for the analytics period (use two --date flags for a range: --date START --date END)', multiple: true, required: true}),
     'date-type': Flags.string({
-      description: 'Date type for grouping',
+      description: 'Which date to treat as a user joining date (default: purchase_date)',
       options: ['purchase_date', 'profile_install_date'],
     }),
     'format': Flags.string({
-      description: 'Response format',
+      description: 'Export file format (default: json)',
       options: ['json', 'csv'],
     }),
     'period-unit': Flags.string({
-      description: 'Period unit for grouping',
+      description: 'Time interval for aggregating data (default: month)',
       options: ['day', 'week', 'month', 'quarter', 'year'],
     }),
-    'segmentation': Flags.string({description: 'Segmentation dimension'}),
-    'store': Flags.string({description: 'Comma-separated list of stores'}),
-    'store-product-id': Flags.string({description: 'Comma-separated list of store product IDs'}),
+    'segmentation': Flags.string({description: 'Dimension to segment results by'}),
+    'store': Flags.string({description: 'Filter by app stores (comma-separated, e.g. app_store,play_store)'}),
+    'store-product-id': Flags.string({description: 'Filter by store product IDs (comma-separated)'}),
   }
 
   async run(): Promise<unknown> {

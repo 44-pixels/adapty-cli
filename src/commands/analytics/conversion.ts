@@ -29,31 +29,34 @@ export default class AnalyticsConversion extends Command {
   static args = {
     app_id: Args.string({description: 'App ID (UUID)', required: true}),
   }
-static description = 'Fetch conversion rate metrics'
+static description = 'Fetch conversion rate metrics between subscription lifecycle stages'
 static enableJsonFlag = true
 static examples = [
-    '<%= config.bin %> analytics conversion 550e8400-e29b-41d4-a716-446655440000 --date 2024-01-01 2024-01-31 --to-period month',
+    '<%= config.bin %> analytics conversion APP_ID --date 2024-01-01 --date 2024-01-31 --to-period 0  # install → trial',
+    '<%= config.bin %> analytics conversion APP_ID --date 2024-01-01 --date 2024-01-31 --to-period 1  # install → paid',
+    '<%= config.bin %> analytics conversion APP_ID --date 2024-01-01 --date 2024-01-31 --from-period 0 --to-period 1  # trial → paid',
+    '<%= config.bin %> analytics conversion APP_ID --date 2024-01-01 --date 2024-01-31 --from-period 1 --to-period 2  # paid → 2nd renewal',
   ]
 static flags = {
-    'country': Flags.string({description: 'Comma-separated list of country codes'}),
-    'date': Flags.string({description: 'Date range (space-separated: start end)', multiple: true, required: true}),
+    'country': Flags.string({description: 'Filter by 2-letter country codes (comma-separated)'}),
+    'date': Flags.string({description: 'Date for the analytics period (use two --date flags for a range: --date START --date END)', multiple: true, required: true}),
     'date-type': Flags.string({
-      description: 'Date type for grouping',
+      description: 'Which date to treat as the user joining date (default: purchase_date)',
       options: ['purchase_date', 'profile_install_date'],
     }),
     'format': Flags.string({
-      description: 'Response format',
+      description: 'Export file format (default: json)',
       options: ['json', 'csv'],
     }),
-    'from-period': Flags.string({description: 'Source conversion period (nullable)'}),
+    'from-period': Flags.string({description: "Starting subscription lifecycle stage number: omit for install, 0 for trial, 1+ for renewal period"}),
     'period-unit': Flags.string({
-      description: 'Period unit for grouping',
+      description: 'Time interval for aggregating data (default: month)',
       options: ['day', 'week', 'month', 'quarter', 'year'],
     }),
-    'segmentation': Flags.string({description: 'Segmentation dimension'}),
-    'store': Flags.string({description: 'Comma-separated list of stores'}),
-    'store-product-id': Flags.string({description: 'Comma-separated list of store product IDs'}),
-    'to-period': Flags.string({description: 'Target conversion period', required: true}),
+    'segmentation': Flags.string({description: 'Dimension to segment results by'}),
+    'store': Flags.string({description: 'Filter by app stores (comma-separated, e.g. app_store,play_store)'}),
+    'store-product-id': Flags.string({description: 'Filter by store product IDs (comma-separated)'}),
+    'to-period': Flags.string({description: "Target subscription lifecycle stage number: 0 for trial, 1 for first paid, 2+ for renewal period", required: true}),
   }
 
   async run(): Promise<unknown> {

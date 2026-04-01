@@ -27,29 +27,30 @@ export default class AnalyticsFunnel extends Command {
   static args = {
     app_id: Args.string({description: 'App ID (UUID)', required: true}),
   }
-static description = 'Fetch funnel progression analytics'
+static description = 'Fetch funnel progression analytics (install → paywall → trial → paid)'
 static enableJsonFlag = true
 static examples = [
-    '<%= config.bin %> analytics funnel 550e8400-e29b-41d4-a716-446655440000 --date 2024-01-01 2024-01-31',
+    '<%= config.bin %> analytics funnel APP_ID --date 2024-01-01 --date 2024-01-31',
+    '<%= config.bin %> analytics funnel APP_ID --date 2024-01-01 --date 2024-03-31 --show-value-as both',
   ]
 static flags = {
-    'country': Flags.string({description: 'Comma-separated list of country codes'}),
-    'date': Flags.string({description: 'Date range (space-separated: start end)', multiple: true, required: true}),
+    'country': Flags.string({description: 'Filter by 2-letter country codes (comma-separated)'}),
+    'date': Flags.string({description: 'Date for the analytics period (use two --date flags for a range: --date START --date END)', multiple: true, required: true}),
     'format': Flags.string({
-      description: 'Response format',
+      description: 'Export file format (default: json)',
       options: ['json', 'csv'],
     }),
     'period-unit': Flags.string({
-      description: 'Period unit for grouping',
+      description: 'Time interval for aggregating data (default: month)',
       options: ['day', 'week', 'month', 'quarter', 'year'],
     }),
-    'segmentation': Flags.string({description: 'Segmentation dimension'}),
+    'segmentation': Flags.string({description: 'Dimension to segment results by'}),
     'show-value-as': Flags.string({
-      description: 'How to display values',
+      description: 'Display funnel values as absolute numbers, relative percentages, or both',
       options: ['absolute', 'relative', 'both'],
     }),
-    'store': Flags.string({description: 'Comma-separated list of stores'}),
-    'store-product-id': Flags.string({description: 'Comma-separated list of store product IDs'}),
+    'store': Flags.string({description: 'Filter by app stores (comma-separated, e.g. app_store,play_store)'}),
+    'store-product-id': Flags.string({description: 'Filter by store product IDs (comma-separated)'}),
   }
 
   async run(): Promise<unknown> {

@@ -31,42 +31,43 @@ export default class AnalyticsCohort extends Command {
   static args = {
     app_id: Args.string({description: 'App ID (UUID)', required: true}),
   }
-static description = 'Fetch cohort tracking data'
+static description = 'Fetch cohort tracking data to analyze user groups over time'
 static enableJsonFlag = true
 static examples = [
-    '<%= config.bin %> analytics cohort 550e8400-e29b-41d4-a716-446655440000 --date 2024-01-01 2024-01-31 --period-unit month',
+    '<%= config.bin %> analytics cohort APP_ID --date 2024-01-01 --date 2024-01-31 --period-unit month',
+    '<%= config.bin %> analytics cohort APP_ID --date 2024-01-01 --date 2024-03-31 --period-type days --renewal-days 1,7,30',
   ]
 static flags = {
     'accounting-type': Flags.string({
-      description: 'Accounting type',
+      description: 'Accounting method for revenue calculation (default: revenue)',
       options: ['revenue', 'proceeds', 'net_revenue'],
     }),
-    'country': Flags.string({description: 'Comma-separated list of country codes'}),
-    'date': Flags.string({description: 'Date range (space-separated: start end)', multiple: true, required: true}),
+    'country': Flags.string({description: 'Filter by 2-letter country codes (comma-separated)'}),
+    'date': Flags.string({description: 'Date for the analytics period (use two --date flags for a range: --date START --date END)', multiple: true, required: true}),
     'format': Flags.string({
-      description: 'Response format',
+      description: 'Export file format (default: json)',
       options: ['json', 'csv'],
     }),
     'period-type': Flags.string({
-      description: 'Period type',
+      description: 'Analyze cohorts by subscription renewals or by calendar days (default: renewals)',
       options: ['renewals', 'days'],
     }),
     'period-unit': Flags.string({
-      description: 'Period unit for grouping',
+      description: 'Time interval for aggregating data (default: month)',
       options: ['day', 'week', 'month', 'quarter', 'year'],
     }),
     'prediction-months': Flags.integer({
-      description: 'Prediction months (3, 6, 9, 12, 18, 24)',
+      description: 'Number of months to predict into the future: 3, 6, 9, 12, 18, or 24 (default: 12)',
     }),
-    'renewal-days': Flags.string({description: 'Comma-separated list of renewal days (integers)'}),
-    'store': Flags.string({description: 'Comma-separated list of stores'}),
-    'store-product-id': Flags.string({description: 'Comma-separated list of store product IDs'}),
+    'renewal-days': Flags.string({description: 'Days since install to use as cohort periods when period-type=days (comma-separated integers)'}),
+    'store': Flags.string({description: 'Filter by app stores (comma-separated, e.g. app_store,play_store)'}),
+    'store-product-id': Flags.string({description: 'Filter by store product IDs (comma-separated)'}),
     'value-field': Flags.string({
-      description: 'Value field to display',
+      description: 'Metric to display in cohort values (default: revenue)',
       options: ['revenue', 'arppu', 'arpu', 'arpas', 'subscribers', 'subscriptions'],
     }),
     'value-type': Flags.string({
-      description: 'Value type (absolute or relative)',
+      description: 'Show values as absolute numbers or relative percentages (default: absolute)',
       options: ['absolute', 'relative'],
     }),
   }
