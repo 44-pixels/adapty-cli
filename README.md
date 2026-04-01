@@ -4,7 +4,7 @@
 
 # Adapty CLI
 
-[Adapty Developer CLI](https://adapty.io/docs/developer-cli). Manage apps, products, paywalls, placements, and access levels from your terminal.
+[Adapty Developer CLI](https://adapty.io/docs/developer-cli). Manage apps, products, paywalls, placements, access levels, and fetch analytics data from your terminal.
 
 ## Installation
 
@@ -85,6 +85,42 @@ adapty access-levels get --app UUID ACCESS_LEVEL_ID
 adapty access-levels create --app UUID [flags]
 adapty access-levels update --app UUID ACCESS_LEVEL_ID [flags]
 ```
+
+### Analytics
+
+Fetch analytics data using the Analytics Export API. These commands use `APP_ID` (UUID) as a positional argument and automatically authenticate with the app's secret key.
+
+Date ranges use two `--date` flags: `--date START --date END`.
+
+```sh
+# General analytics data (chart types: revenue, mrr, arr, arppu, arpu, installs, etc.)
+adapty analytics data APP_ID --chart-id revenue --date 2024-01-01 --date 2024-03-31
+adapty analytics data APP_ID --chart-id mrr --date 2024-01-01 --date 2024-03-31 --period-unit week
+
+# Cohort tracking
+adapty analytics cohort APP_ID --date 2024-01-01 --date 2024-03-31 --period-unit month
+adapty analytics cohort APP_ID --date 2024-01-01 --date 2024-03-31 --period-type days --renewal-days 1,7,30
+
+# Conversion rate metrics (from_period/to_period are lifecycle stage numbers)
+adapty analytics conversion APP_ID --date 2024-01-01 --date 2024-03-31 --to-period 0  # install → trial
+adapty analytics conversion APP_ID --date 2024-01-01 --date 2024-03-31 --to-period 1  # install → paid
+adapty analytics conversion APP_ID --date 2024-01-01 --date 2024-03-31 --from-period 0 --to-period 1  # trial → paid
+adapty analytics conversion APP_ID --date 2024-01-01 --date 2024-03-31 --from-period 1 --to-period 2  # paid → 2nd renewal
+
+# Funnel progression (install → paywall → trial → paid)
+adapty analytics funnel APP_ID --date 2024-01-01 --date 2024-03-31
+adapty analytics funnel APP_ID --date 2024-01-01 --date 2024-03-31 --show-value-as both
+
+# Lifetime value (LTV)
+adapty analytics ltv APP_ID --date 2024-01-01 --date 2024-03-31
+adapty analytics ltv APP_ID --date 2024-01-01 --date 2024-03-31 --period-type days
+
+# Retention analysis
+adapty analytics retention APP_ID --date 2024-01-01 --date 2024-03-31
+adapty analytics retention APP_ID --date 2024-01-01 --date 2024-03-31 --use-trial
+```
+
+All analytics commands support `--json` for programmatic output, `--format csv` for CSV export, and common filters like `--country`, `--store`, and `--store-product-id`.
 
 ### Global Flags
 

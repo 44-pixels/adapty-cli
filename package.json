@@ -79,6 +79,9 @@
       },
       "placements": {
         "description": "Manage placements"
+      },
+      "analytics": {
+        "description": "Fetch analytics data"
       }
     }
   },
