@@ -22,7 +22,7 @@ claude mcp add adapty -- npx -y github:44-pixels/adapty-cli adapty mcp serve
   "mcpServers": {
     "adapty": {
       "command": "npx",
-      "args": ["-y", "adapty@latest", "mcp", "serve"]
+      "args": ["-y", "github:44-pixels/adapty-cli", "adapty", "mcp", "serve"]
     }
   }
 }
@@ -35,7 +35,7 @@ claude mcp add adapty -- npx -y github:44-pixels/adapty-cli adapty mcp serve
   "mcpServers": {
     "adapty": {
       "command": "npx",
-      "args": ["-y", "adapty@latest", "mcp", "serve"]
+      "args": ["-y", "github:44-pixels/adapty-cli", "adapty", "mcp", "serve"]
     }
   }
 }
