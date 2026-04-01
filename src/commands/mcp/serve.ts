@@ -7,7 +7,7 @@ export default class McpServe extends Command {
   static description = 'Start the Adapty MCP server (stdio transport). Use this with Claude Code, Cursor, or any MCP-compatible client.'
   static examples = [
     '<%= config.bin %> mcp serve',
-    'Add to Claude Code: npx adapty mcp serve',
+    'Add to Claude Code: npx -y github:44-pixels/adapty-cli adapty mcp serve',
   ]
 
   async run(): Promise<void> {

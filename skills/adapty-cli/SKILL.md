@@ -12,7 +12,7 @@ The Adapty CLI includes an MCP server that exposes all commands as tools. This i
 **Claude Code — add via CLI:**
 
 ```sh
-claude mcp add adapty -- npx -y adapty@latest mcp serve
+claude mcp add adapty -- npx -y github:44-pixels/adapty-cli adapty mcp serve
 ```
 
 **Claude Code — manual config** (`~/.claude/settings.json` or project `.claude/settings.json`):
@@ -48,13 +48,13 @@ Once configured, the AI agent has access to 31 tools for managing apps, products
 ## CLI Installation
 
 ```sh
-npm install -g adapty
+npm install -g github:44-pixels/adapty-cli
 ```
 
 Or run without installing:
 
 ```sh
-npx adapty@latest
+npx -y github:44-pixels/adapty-cli adapty
 ```
 
 ---

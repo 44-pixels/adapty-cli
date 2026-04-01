@@ -101,6 +101,7 @@
     "lint": "eslint",
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "pnpm run lint",
+    "prepare": "tsc -b",
     "prepack": "oclif manifest && oclif readme",
     "prepublishOnly": "pnpm build && oclif manifest",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
