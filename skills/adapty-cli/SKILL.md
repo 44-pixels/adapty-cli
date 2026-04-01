@@ -5,16 +5,56 @@ description: Use when setting up or managing Adapty in-app subscriptions, paywal
 
 # Adapty CLI Skill
 
-## Installation
+## MCP Server (Claude Code / Cursor / AI Agents)
+
+The Adapty CLI includes an MCP server that exposes all commands as tools. This is the recommended way to use Adapty with AI coding assistants.
+
+**Claude Code — add via CLI:**
 
 ```sh
-npm install -g adapty
+claude mcp add adapty -- npx -y github:44-pixels/adapty-cli adapty mcp serve
+```
+
+**Claude Code — manual config** (`~/.claude/settings.json` or project `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "adapty": {
+      "command": "npx",
+      "args": ["-y", "github:44-pixels/adapty-cli", "adapty", "mcp", "serve"]
+    }
+  }
+}
+```
+
+**Cursor — MCP config** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "adapty": {
+      "command": "npx",
+      "args": ["-y", "github:44-pixels/adapty-cli", "adapty", "mcp", "serve"]
+    }
+  }
+}
+```
+
+Once configured, the AI agent has access to 31 tools for managing apps, products, access levels, paywalls, placements, and analytics. Authentication is handled via `auth_login` tool or by setting the `ADAPTY_TOKEN` environment variable.
+
+---
+
+## CLI Installation
+
+```sh
+npm install -g github:44-pixels/adapty-cli
 ```
 
 Or run without installing:
 
 ```sh
-npx adapty@latest
+npx -y github:44-pixels/adapty-cli adapty
 ```
 
 ---

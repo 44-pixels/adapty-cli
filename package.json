@@ -4,15 +4,18 @@
   "version": "0.1.5",
   "author": "Adapty team <support@adapty.io>",
   "bin": {
-    "adapty": "./bin/run.js"
+    "adapty": "./bin/run.js",
+    "adapty-mcp": "./bin/mcp.js"
   },
   "bugs": {
     "url": "https://github.com/adaptyteam/adapty-cli/issues"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
-    "open": "^11.0.0"
+    "open": "^11.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/compat": "^1",
@@ -46,6 +49,7 @@
   "keywords": [
     "adapty",
     "cli",
+    "mcp",
     "subscriptions",
     "in-apps",
     "purchases"
@@ -82,6 +86,9 @@
       },
       "analytics": {
         "description": "Fetch analytics data"
+      },
+      "mcp": {
+        "description": "MCP (Model Context Protocol) server"
       }
     }
   },
@@ -94,6 +101,7 @@
     "lint": "eslint",
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "pnpm run lint",
+    "prepare": "tsc -b",
     "prepack": "oclif manifest && oclif readme",
     "prepublishOnly": "pnpm build && oclif manifest",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
