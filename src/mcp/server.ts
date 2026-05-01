@@ -1,4 +1,5 @@
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js' // eslint-disable-line import/no-unresolved
+import {AsyncLocalStorage} from 'node:async_hooks'
 import {z} from 'zod'
 
 import {AnalyticsClient} from '../lib/analytics-client.js'
@@ -12,8 +13,22 @@ interface ServerOptions {
   version: string
 }
 
+interface RequestContext {
+  token?: string
+}
+
+// Set by the HTTP transport per request from the Authorization header.
+// Read by createClient so individual tool handlers stay unchanged.
+export const requestContext = new AsyncLocalStorage<RequestContext>()
+
+async function resolveCallerToken(configDir?: string): Promise<null | string> {
+  const headerToken = requestContext.getStore()?.token
+  if (headerToken) return headerToken
+  return resolveToken(configDir)
+}
+
 async function createClient(configDir?: string): Promise<ApiClient> {
-  const token = await resolveToken(configDir)
+  const token = await resolveCallerToken(configDir)
   if (!token) throw new AuthRequiredError()
   return new ApiClient({token, userAgent: 'adapty-cli/mcp'})
 }
@@ -25,7 +40,7 @@ async function createAnalyticsClient(apiClient: ApiClient, appId: string): Promi
 
 function formatError(error: unknown): string {
   if (error instanceof AuthRequiredError) {
-    return 'Not authenticated. Use auth_login_start + auth_login_complete to authenticate, or set the ADAPTY_TOKEN environment variable.'
+    return 'Not authenticated. Use the auth_login tool, set the ADAPTY_TOKEN environment variable, or pass an Authorization: Bearer header (HTTP mode).'
   }
 
   if (error instanceof ApiError) {
@@ -65,6 +80,12 @@ function buildFilters(params: {country?: string; date: string[]; store?: string;
   return filters
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 export function createMcpServer(opts: ServerOptions): McpServer {
   const {configDir, version} = opts
   const server = new McpServer(
@@ -73,11 +94,11 @@ export function createMcpServer(opts: ServerOptions): McpServer {
       instructions: [
         'Adapty MCP Server — manage mobile subscription infrastructure via the Adapty Developer API.',
         '',
-        'AUTHENTICATION: Before calling any tools, ensure you are authenticated.',
-        '- If ADAPTY_TOKEN env var is set, it will be used automatically.',
-        '- Otherwise, authenticate via browser-based OAuth device flow (two steps):',
-        '  1. Call auth_login_start to get a verification URL and user code. Show the URL to the user so they can authorize in the browser.',
-        '  2. Call auth_login_complete with the device_code returned by step 1. Repeat (respecting interval_seconds) while status is "pending" until you get "authenticated", "denied", or "expired".',
+        'AUTHENTICATION: tokens are resolved per request in this order:',
+        '  1. `Authorization: Bearer <token>` request header (highest priority)',
+        '  2. ADAPTY_TOKEN environment variable',
+        '  3. Token persisted by `adapty auth login` (lowest priority)',
+        '- If no token is available, call the auth_login tool. It runs the OAuth device flow, streams the verification URL via a `notifications/message` log notification (so the agent can show it to the user), then blocks until authorization completes and returns the access_token in the final result. The token is returned to the caller — it is not persisted server-side; pass it back as a Bearer header on subsequent calls.',
         '- Use auth_status to check current authentication state.',
         '',
         'WORKFLOW: Most tools require an app_id (UUID). Use apps_list first to discover app IDs.',
@@ -96,12 +117,12 @@ export function createMcpServer(opts: ServerOptions): McpServer {
   // ─── AUTH TOOLS ──────────────────────────────────────────────────────
 
   server.registerTool(
-    'auth_login_start',
+    'auth_login',
     {
-      description: 'Begin browser-based OAuth device flow. Returns a verification URL and user code — show these to the user so they can authorize in the browser. Then call auth_login_complete with the returned device_code to obtain an access token.',
-      title: 'Login (Start)',
+      description: 'Authenticate with Adapty via browser-based OAuth device flow. Streams the verification URL and user code via a `notifications/message` log notification as soon as they are issued — show them to the user. The tool then blocks until the user authorizes (or the code expires) and returns the access_token in the final result. The token is NOT persisted by the server — pass it back as `Authorization: Bearer <token>` on subsequent calls. For local persistence, use the `adapty auth login` CLI instead.',
+      title: 'Login',
     },
-    async () => {
+    async (extra) => {
       try {
         const client = new ApiClient({userAgent: 'adapty-cli/mcp'})
         const device = await client.post<{
@@ -113,66 +134,72 @@ export function createMcpServer(opts: ServerOptions): McpServer {
           verification_uri_complete: string
         }>('/auth/device', {client_id: 'adapty-cli'})
 
-        return toolResult({
-          device_code: device.device_code,
-          expires_in: device.expires_in,
-          interval_seconds: device.interval_seconds,
-          user_code: device.user_code,
-          verification_uri: device.verification_uri,
-          verification_uri_complete: device.verification_uri_complete,
+        // Stream the verification URL out before the tool returns. Clients that
+        // surface `notifications/message` (Claude Code, Cursor, MCP Inspector,
+        // etc.) will display this to the user while the tool keeps polling.
+        await extra.sendNotification({
+          method: 'notifications/message',
+          params: {
+            data: {
+              expires_in: device.expires_in,
+              message: `Open ${device.verification_uri_complete} in your browser to authorize. User code: ${device.user_code}`,
+              user_code: device.user_code,
+              verification_uri: device.verification_uri,
+              verification_uri_complete: device.verification_uri_complete,
+            },
+            level: 'info',
+            logger: 'adapty.auth',
+          },
         })
-      } catch (error) {
-        return toolError(formatError(error))
-      }
-    },
-  )
 
-  server.registerTool(
-    'auth_login_complete',
-    {
-      description: 'Exchange a device_code (from auth_login_start) for an access token. Performs a single non-blocking poll. Returns status="pending" if the user has not yet authorized — call again after interval_seconds. Status values: "authenticated" (access_token returned), "pending", "denied", "expired".',
-      inputSchema: {
-        device_code: z.string().describe('The device_code returned by auth_login_start'),
-      },
-      title: 'Login (Complete)',
-    },
-    async (args) => {
-      try {
-        const client = new ApiClient({userAgent: 'adapty-cli/mcp'})
+        const interval = Math.max((device.interval_seconds || 5) * 1000, 5000)
+        const deadline = Date.now() + (device.expires_in * 1000)
+        let pollDelay = interval
 
-        try {
-          const result = await client.post<{access_token: string; expires_in?: number; token_type?: string; user: {email: string; name: string}}>('/auth/token', {
-            client_id: 'adapty-cli',
-            device_code: args.device_code,
-            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-          })
-
-          await writeConfig({access_token: result.access_token, user: result.user}, configDir)
-          return toolResult({
-            access_token: result.access_token,
-            email: result.user.email,
-            expires_in: result.expires_in,
-            status: 'authenticated',
-            token_type: result.token_type,
-            user: result.user,
-          })
-        } catch (error) {
-          if (error instanceof ApiError) {
-            if (error.errorCode === 'authorization_pending' || error.errorCode === 'slow_down') {
-              return toolResult({status: 'pending'})
-            }
-
-            if (error.errorCode === 'access_denied') {
-              return toolResult({status: 'denied'})
-            }
-
-            if (error.errorCode === 'expired_token') {
-              return toolResult({status: 'expired'})
-            }
+        while (Date.now() < deadline) {
+          if (extra.signal.aborted) {
+            return toolError('Login cancelled')
           }
 
-          throw error
+          await sleep(pollDelay)
+
+          try {
+            const result = await client.post<{access_token: string; expires_in?: number; token_type?: string; user: {email: string; name: string}}>('/auth/token', {
+              client_id: 'adapty-cli',
+              device_code: device.device_code,
+              grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            })
+
+            return toolResult({
+              access_token: result.access_token,
+              email: result.user.email,
+              expires_in: result.expires_in,
+              status: 'authenticated',
+              token_type: result.token_type,
+              user: result.user,
+            })
+          } catch (error) {
+            if (error instanceof ApiError) {
+              if (error.errorCode === 'authorization_pending') continue
+              if (error.errorCode === 'slow_down') {
+                pollDelay += 5000
+                continue
+              }
+
+              if (error.errorCode === 'access_denied') {
+                return toolError('Authorization denied by user')
+              }
+
+              if (error.errorCode === 'expired_token') {
+                return toolError('Code expired before user authorized')
+              }
+            }
+
+            throw error
+          }
         }
+
+        return toolError('Code expired before user authorized')
       } catch (error) {
         return toolError(formatError(error))
       }
@@ -186,14 +213,24 @@ export function createMcpServer(opts: ServerOptions): McpServer {
       title: 'Auth Status',
     },
     async () => {
+      const headerToken = requestContext.getStore()?.token
+      if (headerToken) {
+        return toolResult({authenticated: true, source: 'header', token_prefix: headerToken.slice(0, 8)})
+      }
+
+      if (process.env.ADAPTY_TOKEN) {
+        return toolResult({authenticated: true, source: 'env', token_prefix: process.env.ADAPTY_TOKEN.slice(0, 8)})
+      }
+
       const config = await readConfig(configDir)
       if (!config.access_token || !config.user) {
-        return toolResult({authenticated: false, message: 'Not authenticated. Use auth_login_start + auth_login_complete to authenticate.'})
+        return toolResult({authenticated: false, message: 'No Authorization header, no ADAPTY_TOKEN env var, no persisted token. Pass a Bearer header or call auth_login.'})
       }
 
       return toolResult({
         authenticated: true,
         email: config.user.email,
+        source: 'config',
         token_prefix: config.access_token.slice(0, 8),
       })
     },
@@ -220,7 +257,7 @@ export function createMcpServer(opts: ServerOptions): McpServer {
     'auth_logout',
     {
       annotations: {destructiveHint: true},
-      description: 'Remove stored authentication token locally. The token remains valid server-side until expiry.',
+      description: 'Remove the locally persisted authentication token (the one stored by `adapty auth login`). Tokens passed via Authorization header or ADAPTY_TOKEN env var are not affected — drop the header on the client side, or use auth_revoke to invalidate the token server-side.',
       title: 'Logout',
     },
     async () => {
@@ -243,14 +280,20 @@ export function createMcpServer(opts: ServerOptions): McpServer {
     },
     async () => {
       try {
-        const config = await readConfig(configDir)
-        if (!config.access_token) {
+        const tokenToRevoke = await resolveCallerToken(configDir)
+        if (!tokenToRevoke) {
           return toolResult({status: 'not_authenticated'})
         }
 
         const client = await createClient(configDir)
-        await client.post('/auth/tokens/revoke', {token: config.access_token})
-        await writeConfig({}, configDir)
+        await client.post('/auth/tokens/revoke', {token: tokenToRevoke})
+
+        // If the revoked token was the one persisted locally, clear it.
+        const persisted = await readConfig(configDir)
+        if (persisted.access_token === tokenToRevoke) {
+          await writeConfig({}, configDir)
+        }
+
         return toolResult({status: 'revoked'})
       } catch (error) {
         return toolError(formatError(error))
