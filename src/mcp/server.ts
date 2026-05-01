@@ -25,7 +25,7 @@ async function createAnalyticsClient(apiClient: ApiClient, appId: string): Promi
 
 function formatError(error: unknown): string {
   if (error instanceof AuthRequiredError) {
-    return 'Not authenticated. Use the auth_login tool to authenticate, or set the ADAPTY_TOKEN environment variable.'
+    return 'Not authenticated. Use auth_login_start + auth_login_complete to authenticate, or set the ADAPTY_TOKEN environment variable.'
   }
 
   if (error instanceof ApiError) {
@@ -75,7 +75,9 @@ export function createMcpServer(opts: ServerOptions): McpServer {
         '',
         'AUTHENTICATION: Before calling any tools, ensure you are authenticated.',
         '- If ADAPTY_TOKEN env var is set, it will be used automatically.',
-        '- Otherwise, use the auth_login tool to authenticate via browser (OAuth device flow).',
+        '- Otherwise, authenticate via browser-based OAuth device flow (two steps):',
+        '  1. Call auth_login_start to get a verification URL and user code. Show the URL to the user so they can authorize in the browser.',
+        '  2. Call auth_login_complete with the device_code returned by step 1. Repeat (respecting interval_seconds) while status is "pending" until you get "authenticated", "denied", or "expired".',
         '- Use auth_status to check current authentication state.',
         '',
         'WORKFLOW: Most tools require an app_id (UUID). Use apps_list first to discover app IDs.',
@@ -94,20 +96,14 @@ export function createMcpServer(opts: ServerOptions): McpServer {
   // ─── AUTH TOOLS ──────────────────────────────────────────────────────
 
   server.registerTool(
-    'auth_login',
+    'auth_login_start',
     {
-      description: 'Authenticate with Adapty via browser-based OAuth device flow. Opens a browser window for authorization. Returns the verification URL and user code — the user must complete authorization in the browser.',
-      title: 'Login',
+      description: 'Begin browser-based OAuth device flow. Returns a verification URL and user code — show these to the user so they can authorize in the browser. Then call auth_login_complete with the returned device_code to obtain an access token.',
+      title: 'Login (Start)',
     },
     async () => {
-      const config = await readConfig(configDir)
-      if (config.access_token && config.user) {
-        return toolResult({message: `Already authenticated as ${config.user.email}`, status: 'already_authenticated'})
-      }
-
-      const client = new ApiClient({userAgent: 'adapty-cli/mcp'})
-
       try {
+        const client = new ApiClient({userAgent: 'adapty-cli/mcp'})
         const device = await client.post<{
           device_code: string
           expires_in: number
@@ -117,46 +113,66 @@ export function createMcpServer(opts: ServerOptions): McpServer {
           verification_uri_complete: string
         }>('/auth/device', {client_id: 'adapty-cli'})
 
-        // Poll for the token
-        const interval = Math.max((device.interval_seconds || 5) * 1000, 5000)
-        const deadline = Date.now() + device.expires_in * 1000
+        return toolResult({
+          device_code: device.device_code,
+          expires_in: device.expires_in,
+          interval_seconds: device.interval_seconds,
+          user_code: device.user_code,
+          verification_uri: device.verification_uri,
+          verification_uri_complete: device.verification_uri_complete,
+        })
+      } catch (error) {
+        return toolError(formatError(error))
+      }
+    },
+  )
 
-        const pollForToken = async (): Promise<{email: string; status: string} | {error: string; status: string}> => {
-          while (Date.now() < deadline) {
-            await new Promise((resolve) => {
-              setTimeout(resolve, interval)
-            })
+  server.registerTool(
+    'auth_login_complete',
+    {
+      description: 'Exchange a device_code (from auth_login_start) for an access token. Performs a single non-blocking poll. Returns status="pending" if the user has not yet authorized — call again after interval_seconds. Status values: "authenticated" (access_token returned), "pending", "denied", "expired".',
+      inputSchema: {
+        device_code: z.string().describe('The device_code returned by auth_login_start'),
+      },
+      title: 'Login (Complete)',
+    },
+    async (args) => {
+      try {
+        const client = new ApiClient({userAgent: 'adapty-cli/mcp'})
 
-            try {
-              const result = await client.post<{access_token: string; user: {email: string; name: string}} | {error: string}>('/auth/token', {
-                client_id: 'adapty-cli',
-                device_code: device.device_code,
-                grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-              })
+        try {
+          const result = await client.post<{access_token: string; expires_in?: number; token_type?: string; user: {email: string; name: string}}>('/auth/token', {
+            client_id: 'adapty-cli',
+            device_code: args.device_code,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          })
 
-              if ('access_token' in result) {
-                await writeConfig({access_token: result.access_token, user: result.user}, configDir)
-                return {email: result.user.email, status: 'authenticated'}
-              }
-            } catch (error) {
-              if (error instanceof ApiError) {
-                if (error.errorCode === 'authorization_pending') continue
-                if (error.errorCode === 'slow_down') continue
-                if (error.errorCode === 'access_denied') return {error: 'Authorization denied by user', status: 'denied'}
-                if (error.errorCode === 'expired_token') return {error: 'Code expired', status: 'expired'}
-              }
+          await writeConfig({access_token: result.access_token, user: result.user}, configDir)
+          return toolResult({
+            access_token: result.access_token,
+            email: result.user.email,
+            expires_in: result.expires_in,
+            status: 'authenticated',
+            token_type: result.token_type,
+            user: result.user,
+          })
+        } catch (error) {
+          if (error instanceof ApiError) {
+            if (error.errorCode === 'authorization_pending' || error.errorCode === 'slow_down') {
+              return toolResult({status: 'pending'})
+            }
+
+            if (error.errorCode === 'access_denied') {
+              return toolResult({status: 'denied'})
+            }
+
+            if (error.errorCode === 'expired_token') {
+              return toolResult({status: 'expired'})
             }
           }
 
-          return {error: 'Code expired', status: 'expired'}
+          throw error
         }
-
-        const result = await pollForToken()
-        if ('error' in result) {
-          return toolError(result.error)
-        }
-
-        return toolResult(result)
       } catch (error) {
         return toolError(formatError(error))
       }
@@ -172,7 +188,7 @@ export function createMcpServer(opts: ServerOptions): McpServer {
     async () => {
       const config = await readConfig(configDir)
       if (!config.access_token || !config.user) {
-        return toolResult({authenticated: false, message: 'Not authenticated. Use auth_login to authenticate.'})
+        return toolResult({authenticated: false, message: 'Not authenticated. Use auth_login_start + auth_login_complete to authenticate.'})
       }
 
       return toolResult({
